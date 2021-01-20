@@ -6,9 +6,8 @@
  * */
 
 #include <stdio.h>
-
 #include <SDL.h>
-
+#include <sys/stat.h>
 #include "gifdec.h"
 
 int
@@ -30,28 +29,42 @@ main(int argc, char *argv[])
 
     if (argc != 2) {
         fprintf(stderr, "usage:\n  %s gif-file\n", argv[0]);
-        return 1;
+        return EXIT_FAILURE;
     }
-    gif = gd_open_gif(argv[1]);
+    FILE *f = fopen(argv[1], "rb");
+    if (!f) {
+        perror("fopen");
+        return EXIT_FAILURE;
+    }
+    struct stat file_info;
+    fstat(fileno(f), &file_info);
+    void *buf = malloc(file_info.st_size);
+    if (fread(buf, file_info.st_size, 1, f) != 1) {
+        fprintf(stderr, "Failed to read GIF data to memory\n");
+        return EXIT_FAILURE;
+    }
+    fclose(f);
+    gif = gd_open_gif(buf, file_info.st_size);
     if (!gif) {
         fprintf(stderr, "Could not open %s\n", argv[1]);
-        return 1;
+        return EXIT_FAILURE;
     }
     frame = malloc(gif->width * gif->height * 3);
+    snprintf(title, sizeof(title) - 1, "GIF %dx%d %d colors",
+             gif->width, gif->height, gif->palette->size);
+    puts(title);
     if (!frame) {
         fprintf(stderr, "Could not allocate frame\n");
-        return 1;
+        return EXIT_FAILURE;
     }
     if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER) != 0) {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
-        return 1;
+        return EXIT_FAILURE;
     }
     if (SDL_CreateWindowAndRenderer(gif->width, gif->height, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
         SDL_Log("Couldn't create window and renderer: %s", SDL_GetError());
-        return 1;
+        return EXIT_FAILURE;
     }
-    snprintf(title, sizeof(title) - 1, "GIF %dx%d %d colors",
-             gif->width, gif->height, gif->palette->size);
     SDL_SetWindowTitle(window, title);
     color = &gif->gct.colors[gif->bgindex * 3];
     SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], 0x00);
@@ -60,7 +73,7 @@ main(int argc, char *argv[])
     surface = SDL_CreateRGBSurface(0, gif->width, gif->height, 32, 0, 0, 0, 0);
     if (!surface) {
         SDL_Log("SDL_CreateRGBSurface() failed: %s", SDL_GetError());
-        return 1;
+        return EXIT_FAILURE;
     }
     paused = 0;
     quit = 0;
@@ -119,5 +132,5 @@ main(int argc, char *argv[])
     SDL_Quit();
     free(frame);
     gd_close_gif(gif);
-    return 0;
+    return EXIT_SUCCESS;
 }
